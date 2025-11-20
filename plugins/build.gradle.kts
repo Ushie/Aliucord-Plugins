@@ -17,8 +17,7 @@ subprojects {
     }
 
     configure<LibraryExtension> {
-        // TODO: Change to your package name
-        namespace = "com.github.yournamehere"
+        namespace = "com.github.ushie"
         compileSdk = 36
 
         defaultConfig {
@@ -39,11 +38,9 @@ subprojects {
     }
 
     configure<AliucordExtension> {
-        // TODO: Change to your name and user ID
-        author("yournamehere", 0L, hyperlink = true)
+        author("Ushie", 399862294143696897L, hyperlink = true)
 
-        // TODO: Change to your repository
-        github("https://github.com/Aliucord/plugins-template")
+        github("https://github.com/Ushie/Aliucord-Plugins")
     }
 
     configure<KtlintExtension> {
