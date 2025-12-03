@@ -1,14 +1,11 @@
 name: "Deploy"
-
 concurrency:
   group: "deploy"
   cancel-in-progress: true
-
 on:
   push:
     branches:
       - main
-
 jobs:
   deploy:
     name: Build & Deploy Plugins
@@ -19,22 +16,18 @@ jobs:
         uses: actions/checkout@v5
         with:
           path: "src"
-
       - name: Checkout builds
         uses: actions/checkout@v5
         with:
           ref: "builds"
           path: "builds"
-
       - name: Setup JDK 21
         uses: actions/setup-java@v5
         with:
           java-version: 21
           distribution: temurin
-
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-
       - name: Build
         run: |
           cd $GITHUB_WORKSPACE/src
@@ -42,9 +35,8 @@ jobs:
           ./gradlew make :generateUpdaterJson
           
           rm -f $GITHUB_WORKSPACE/builds/*.zip
-          cp $GITHUB_WORKSPACE/src/**/build/outputs/*.zip $GITHUB_WORKSPACE/builds/
+          find $GITHUB_WORKSPACE/src -name "*.zip" -path "*/build/outputs/*" -exec cp {} $GITHUB_WORKSPACE/builds/ \;
           cp $GITHUB_WORKSPACE/src/build/outputs/updater.json $GITHUB_WORKSPACE/builds/
-
       - name: Push builds
         run: |
           cd $GITHUB_WORKSPACE/builds
