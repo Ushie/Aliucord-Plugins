@@ -7,19 +7,48 @@ import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.api.rn.user.RNUserProfile
 import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
-import com.aliucord.utils.RxUtils.await
-import com.discord.utilities.rest.RestAPI
 import com.discord.widgets.chat.list.adapter.WidgetChatListAdapterItemMessage
 import com.discord.widgets.chat.list.entries.ChatListEntry
 import com.discord.widgets.chat.list.entries.MessageEntry
+import com.discord.widgets.user.profile.UserProfileHeaderView
+import com.discord.widgets.user.profile.UserProfileHeaderViewModel
 
 @Suppress("unused")
 @AliucordPlugin
 class PronounsInChat : Plugin() {
-    private var cache = HashMap<Long, String?>()
-    val log = com.aliucord.Logger("PronounsInChat")
+    private val sheetProfileHeaderViewId =
+        Utils.getResId("user_sheet_profile_header_view", "id")
+    private val timeStampViewId =
+        Utils.getResId("chat_list_adapter_item_text_timestamp", "id")
+
+    private val cache = HashMap<Long, String?>()
+    private val log = com.aliucord.Logger("PronounsInChat")
 
     override fun start(context: Context) {
+
+        patcher.after<UserProfileHeaderView>(
+            "configureSecondaryName",
+            UserProfileHeaderViewModel.ViewState.Loaded::class.java
+        ) {
+            val state =
+                it.args[0] as? UserProfileHeaderViewModel.ViewState.Loaded
+                    ?: return@after
+
+            val profile =
+                state.userProfile as? RNUserProfile
+                    ?: return@after
+
+            val userId = profile.g().id
+
+            val pronouns =
+                profile.guildMemberProfile?.pronouns?.ifEmpty { null }
+                    ?: profile.userProfile?.pronouns?.ifEmpty { null }
+                    ?: return@after
+
+            savePronouns(userId, pronouns)
+            cache[userId] = pronouns
+        }
+
         patcher.after<WidgetChatListAdapterItemMessage>(
             "onConfigure",
             Int::class.java,
@@ -27,74 +56,51 @@ class PronounsInChat : Plugin() {
         ) { param ->
             val entry = param.args[1] as MessageEntry
             val message = entry.message
-
             if (message.isLoading) return@after
 
-            val author = message.author
-            val guildId = message.guildId
+            val authorId = message.author.id
 
-            val timestampId = Utils.getResId(
-                "chat_list_adapter_item_text_timestamp",
-                "id"
-            )
-            val timestampView = itemView.findViewById<TextView>(timestampId)
-                ?: return@after
+            val timestampView =
+                itemView.findViewById<TextView>(timeStampViewId)
+                    ?: return@after
 
-            cache[author.id]?.let {
+            cache[authorId]?.let {
                 setPronounsTextView(timestampView, it)
                 return@after
             }
 
-            Utils.threadPool.execute {
-                try {
-                    val pronouns = getUserPronouns(author.id, guildId)
-
-                    cache[author.id] = pronouns
-
-                    if (pronouns != null) {
-                        Utils.mainThread.post {
-                            if (message.author.id == author.id) {
-                                setPronounsTextView(timestampView, pronouns)
-                            }
-                        }
-                    }
-                } catch (t: Throwable) {
-                    log.error("Failed to fetch pronouns for user ${author.id}", t)
-                }
+            getPronouns(authorId)?.let {
+                cache[authorId] = it
+                setPronounsTextView(timestampView, it)
+                return@after
             }
         }
     }
 
-    private fun fetchUserProfile(
-        userId: Long,
-        guildId: Long?
-    ): RNUserProfile? =
-        RestAPI.api
-            .userProfileGet(userId, false, guildId)
-            .await()
-            .first
-                as? RNUserProfile
+    private fun pronounKey(userId: Long) =
+        "pronouns.user.$userId"
 
-    private fun getUserPronouns(
-        userId: Long,
-        guildId: Long?
-    ): String? =
-        fetchUserProfile(userId, guildId)
-            ?.run {
-                guildMemberProfile?.pronouns
-                    ?.takeIf(String::isNotEmpty)
-                    ?: userProfile?.pronouns
-                        ?.takeIf(String::isNotEmpty)
-            }
+    private fun savePronouns(userId: Long, pronouns: String) {
+        val key = pronounKey(userId)
+        if (settings.getString(key, null) != pronouns) {
+            settings.setString(key, pronouns)
+        }
+    }
+
+    private fun getPronouns(userId: Long): String? =
+        settings.getString(pronounKey(userId), null)
 
     private fun setPronounsTextView(
         textView: TextView,
         pronouns: String
     ) {
-        textView.text = "${textView.text} • ${pronouns}"
+        if (!textView.text.contains("•")) {
+            textView.text = "${textView.text} • $pronouns"
+        }
     }
 
     override fun stop(context: Context) {
+        cache.clear()
         patcher.unpatchAll()
     }
 }
