@@ -58,6 +58,8 @@ class NewMemberBadge : Plugin() {
             if (!hasJoinedRecently) {
                 return@after
             }
+            log.warn("Msg: ${message.timestamp.g()} - ${entry.author.joinedAt!!.g()}")
+            log.warn("$hasJoinedRecently: ${message.timestamp.g() - entry.author.joinedAt!!.g()}")
 
             val headerView = this.itemView.findViewById<ConstraintLayout>("chat_list_adapter_item_text_header")
             val timeStampView = headerView.findViewById<View>("chat_list_adapter_item_text_timestamp")
@@ -77,7 +79,11 @@ class NewMemberBadge : Plugin() {
                     // val baseSize = 51f
                     // val maxSize = resources.getDimensionPixelSize(role_icon_size)
                     // val size = (baseSize * (fontScale / 100f)).toInt().coerceAtMost(maxSize)
-                    val size = (TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 14f, context.resources.displayMetrics) + 0.5f).toInt()
+                    val size = (TypedValue.applyDimension(
+                        TypedValue.COMPLEX_UNIT_SP,
+                        14f,
+                        context.resources.displayMetrics
+                    ) + 0.5f).toInt()
                     // log.info("Role icon size: ${size}, role icon height: ${roleIconView.layoutParams.height}, font scale: $fontScale")
                     // log.info((fontScale / 100f).toString())
                     // log.info((baseSize * (fontScale / 100f)).toString())
@@ -98,7 +104,11 @@ class NewMemberBadge : Plugin() {
                 container.addView(newMemberBadge, timestampIndex)
 
                 fun setSize(sp: Float) {
-                    val badgeSize = (TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp + 2, context.resources.displayMetrics) + 0.5f).toInt()
+                    val badgeSize = (TypedValue.applyDimension(
+                        TypedValue.COMPLEX_UNIT_SP,
+                        sp + 2,
+                        context.resources.displayMetrics
+                    ) + 0.5f).toInt()
                     newMemberBadge.layoutParams = LinearLayout.LayoutParams(badgeSize, badgeSize)
                 }
 
