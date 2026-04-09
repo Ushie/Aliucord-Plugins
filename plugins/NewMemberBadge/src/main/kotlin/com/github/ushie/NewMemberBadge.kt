@@ -1,6 +1,5 @@
 package com.github.ushie
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -40,7 +39,6 @@ class NewMemberBadge : Plugin() {
     }
 
     @OptIn(ExperimentalTime::class)
-    @SuppressLint("UseCompatLoadingForDrawables", "UseKtx")
     override fun start(context: Context) {
         val daysNeeded = settings.getInt("days", 7)
 
@@ -51,9 +49,9 @@ class NewMemberBadge : Plugin() {
         ) { param ->
             val entry = param.args[1] as? MessageEntry ?: return@after
             if (entry.message.isLoading) return@after
-            val joinedAt = entry.author.joinedAt ?: return@after
 
             itemView.findViewById<ImageView>(newMemberBadgeId)?.visibility = View.GONE
+            val joinedAt = runCatching { entry.author.joinedAt }.getOrNull() ?: return@after
 
             if (Duration
                     .milliseconds(System.currentTimeMillis() - joinedAt.g())
