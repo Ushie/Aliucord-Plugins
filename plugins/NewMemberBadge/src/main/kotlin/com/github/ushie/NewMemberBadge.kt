@@ -2,16 +2,13 @@ package com.github.ushie
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
-import com.aliucord.Logger
 import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
@@ -24,158 +21,92 @@ import com.discord.widgets.chat.list.entries.ChatListEntry
 import com.discord.widgets.chat.list.entries.MessageEntry
 import com.discord.widgets.roles.RoleIconView
 import com.github.ushie.ui.NewMemberBadgeResource
+import kotlin.time.Duration
+import kotlin.time.DurationUnit
+import kotlin.time.ExperimentalTime
 
-// Aliucord Plugin annotation. Must be present on the main class of your plugin
-// Plugin class. Must extend Plugin and override start and stop
-// Learn more: https://github.com/Aliucord/documentation/blob/main/plugin-dev/1_introduction.md#basic-plugin-structure
-
-@AliucordPlugin(
-    requiresRestart = false // Whether your plugin requires a restart after being installed/updated
-)
 @Suppress("unused")
+@AliucordPlugin
 class NewMemberBadge : Plugin() {
-    lateinit var newMemberBadgeResource: NewMemberBadgeResource
-    val log: Logger = Logger("NewMemberBadge")
+    private val newMemberBadgeId = View.generateViewId()
+    private lateinit var newMemberBadgeResource: NewMemberBadgeResource
+
+    init {
+        settingsTab = SettingsTab(PluginSettings::class.java).withArgs(settings)
+    }
 
     override fun load(context: Context) {
         newMemberBadgeResource = NewMemberBadgeResource(resources!!)
     }
 
+    @OptIn(ExperimentalTime::class)
     @SuppressLint("UseCompatLoadingForDrawables", "UseKtx")
     override fun start(context: Context) {
+        val daysNeeded = settings.getInt("days", 7)
+
         patcher.after<WidgetChatListAdapterItemMessage>(
             "onConfigure",
             Int::class.java,
             ChatListEntry::class.java
         ) { param ->
-            val entry = param.args[1] as MessageEntry
-            val message = entry.message
+            val entry = param.args[1] as? MessageEntry ?: return@after
+            if (entry.message.isLoading) return@after
+            val joinedAt = entry.author.joinedAt ?: return@after
 
-            if (message.isLoading) return@after
+            itemView.findViewById<ImageView>(newMemberBadgeId)?.visibility = View.GONE
 
-            if (entry.author.joinedAt == null) return@after
-            val hasJoinedRecently = (message.timestamp.g() - entry.author.joinedAt!!.g()) < 7L * 24 * 60 * 60 * 1000
-            if (!hasJoinedRecently) {
+            if (Duration
+                    .milliseconds(System.currentTimeMillis() - joinedAt.g())
+                    .toInt(DurationUnit.DAYS) >= daysNeeded
+            ) return@after
+
+            val headerView = itemView.findViewById<ConstraintLayout>("chat_list_adapter_item_text_header")
+            val roleIconView = headerView.findViewById<RoleIconView>("chat_list_adapter_item_text_role_icon")
+            val botTagView = headerView.findViewById<TextView>("chat_list_adapter_item_text_tag")
+
+            headerView.findViewById<ImageView>(newMemberBadgeId)?.apply {
+                visibility = View.VISIBLE
                 return@after
             }
-            log.warn("Msg: ${message.timestamp.g()} - ${entry.author.joinedAt!!.g()}")
-            log.warn("$hasJoinedRecently: ${message.timestamp.g() - entry.author.joinedAt!!.g()}")
 
-            val headerView = this.itemView.findViewById<ConstraintLayout>("chat_list_adapter_item_text_header")
-            val timeStampView = headerView.findViewById<View>("chat_list_adapter_item_text_timestamp")
-            val nameView = headerView.findViewById<TextView>("chat_list_adapter_item_text_name")
-            val roleIconView = headerView.findViewById<RoleIconView>("chat_list_adapter_item_text_role_icon")
-            val hasRoleIcon = roleIconView.visibility == View.VISIBLE
-            // val margin = 4.dp
-
-
-            headerView.let { container ->
-                if (container.findViewWithTag<View>("new_member_badge") != null) return@let
-
-                val newMemberBadge = ImageView(context).apply {
-                    id = View.generateViewId()
-                    tag = "new_member_badge"
-                    // val fontScale = getUserSettingsSystem().fontScale
-                    // val baseSize = 51f
-                    // val maxSize = resources.getDimensionPixelSize(role_icon_size)
-                    // val size = (baseSize * (fontScale / 100f)).toInt().coerceAtMost(maxSize)
-                    val size = (TypedValue.applyDimension(
-                        TypedValue.COMPLEX_UNIT_SP,
-                        14f,
-                        context.resources.displayMetrics
-                    ) + 0.5f).toInt()
-                    // log.info("Role icon size: ${size}, role icon height: ${roleIconView.layoutParams.height}, font scale: $fontScale")
-                    // log.info((fontScale / 100f).toString())
-                    // log.info((baseSize * (fontScale / 100f)).toString())
-
-                    layoutParams = ConstraintLayout.LayoutParams(size, size).apply {
-                        startToEnd = if (hasRoleIcon) roleIconView.id else nameView.id
-                        endToStart = timeStampView.id
-                    }
-
-                    setImageDrawable(newMemberBadgeResource.getDrawable("ic_new_member_badge_24dp"))
-                    contentDescription = "New Member Badge"
-                    setOnClickListener {
-                        Utils.showToast("I'm new here, say hi!")
-                    }
+            ImageView(context).apply {
+                id = newMemberBadgeId
+                visibility = View.VISIBLE
+                setImageDrawable(newMemberBadgeResource.getDrawable("ic_new_member_badge_24dp"))
+                contentDescription = "New Member Badge"
+                setOnClickListener {
+                    Utils.showToast("I'm new here, say hi!")
                 }
-
-                val timestampIndex = container.indexOfChild(timeStampView)
-                container.addView(newMemberBadge, timestampIndex)
-
-                fun setSize(sp: Float) {
-                    val badgeSize = (TypedValue.applyDimension(
-                        TypedValue.COMPLEX_UNIT_SP,
-                        sp + 2,
-                        context.resources.displayMetrics
-                    ) + 0.5f).toInt()
-                    newMemberBadge.layoutParams = LinearLayout.LayoutParams(badgeSize, badgeSize)
-                }
-
-
-                newMemberBadge.addTo(headerView) {
-                    roleIconView.layoutParams = (roleIconView.layoutParams as ConstraintLayout.LayoutParams).apply {
-                        endToStart = id
-                    }
-                    timeStampView.layoutParams = (timeStampView.layoutParams as ConstraintLayout.LayoutParams).apply {
-                        startToEnd = id
-                    }
-
-                    layoutParams = ConstraintLayout.LayoutParams(WRAP_CONTENT, MATCH_PARENT).apply {
-                        marginStart = 4.dp
-                        verticalBias = 0.5f
-
-                        topToTop = PARENT_ID
-                        bottomToBottom = PARENT_ID
-                        startToEnd = roleIconView.id
-                        endToStart = timeStampView.id
-                    }
-                }
-
-
-                // ConstraintSet().apply {
-                //     clone(headerView)
-                //
-                //     connect(nameView.id, ConstraintSet.START, ConstraintSet.PARENT_ID, ConstraintSet.START)
-                //     connect(nameView.id, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP)
-                //     connect(nameView.id, ConstraintSet.BOTTOM, ConstraintSet.PARENT_ID, ConstraintSet.BOTTOM)
-                //     if (hasRoleIcon) {
-                //         connect(nameView.id, ConstraintSet.END, roleIconView.id, ConstraintSet.START)
-                //     } else {
-                //         connect(nameView.id, ConstraintSet.END, newMemberBadge.id, ConstraintSet.START)
-                //     }
-                //
-                //     if (hasRoleIcon) {
-                //         connect(roleIconView.id, ConstraintSet.START, nameView.id, ConstraintSet.END, margin)
-                //         connect(roleIconView.id, ConstraintSet.END, newMemberBadge.id, ConstraintSet.START)
-                //         connect(roleIconView.id, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP)
-                //         connect(roleIconView.id, ConstraintSet.BOTTOM, ConstraintSet.PARENT_ID, ConstraintSet.BOTTOM)
-                //
-                //         connect(newMemberBadge.id, ConstraintSet.START, roleIconView.id, ConstraintSet.END, margin)
-                //         connect(newMemberBadge.id, ConstraintSet.END, timeStampView.id, ConstraintSet.START)
-                //     } else {
-                //         connect(newMemberBadge.id, ConstraintSet.START, nameView.id, ConstraintSet.END, margin)
-                //         connect(newMemberBadge.id, ConstraintSet.END, timeStampView.id, ConstraintSet.START)
-                //     }
-                //
-                //     connect(newMemberBadge.id, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP)
-                //     connect(newMemberBadge.id, ConstraintSet.BOTTOM, ConstraintSet.PARENT_ID, ConstraintSet.BOTTOM)
-                //
-                //     connect(timeStampView.id, ConstraintSet.START, newMemberBadge.id, ConstraintSet.END, margin)
-                //     connect(timeStampView.id, ConstraintSet.END, ConstraintSet.PARENT_ID, ConstraintSet.END)
-                //     connect(timeStampView.id, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP)
-                //     connect(timeStampView.id, ConstraintSet.BOTTOM, ConstraintSet.PARENT_ID, ConstraintSet.BOTTOM)
-                //
-                //     setHorizontalChainStyle(nameView.id, ConstraintSet.CHAIN_PACKED)
-                //
-                //     applyTo(headerView)
-                // }
-            }
+            }.addBetween(headerView, roleIconView, botTagView)
         }
     }
-
 
     override fun stop(context: Context) {
         patcher.unpatchAll()
     }
+}
+
+// https://github.com/Aliucord/aliucord/blob/cb3acaeb44c27d477d3caaecbc37d2790ecddece/Aliucord/src/main/java/com/aliucord/coreplugins/decorations/guildtags/GuildTagView.kt
+fun View.addBetween(parent: ConstraintLayout, left: View, right: View): View {
+    addTo(parent) {
+        left.layoutParams = (left.layoutParams as ConstraintLayout.LayoutParams).apply {
+            endToStart = id
+        }
+
+        right.layoutParams = (right.layoutParams as ConstraintLayout.LayoutParams).apply {
+            startToEnd = id
+        }
+
+        layoutParams = ConstraintLayout.LayoutParams(WRAP_CONTENT, MATCH_PARENT).apply {
+            marginStart = 4.dp
+            verticalBias = 0.5f
+
+            topToTop = PARENT_ID
+            bottomToBottom = PARENT_ID
+            startToEnd = left.id
+            endToStart = right.id
+        }
+    }
+
+    return this
 }
