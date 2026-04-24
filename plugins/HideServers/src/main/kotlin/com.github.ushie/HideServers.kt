@@ -14,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.fragment.app.FragmentManager
+import androidx.recyclerview.widget.RecyclerView
 import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
@@ -41,6 +42,7 @@ class HideServers : Plugin() {
     }
 
     private enum class VisibilityMode { HIDE, SHOW, EDIT }
+
     private var visibilityMode = VisibilityMode.HIDE
     private val hiddenServers = mutableSetOf<Long>()
     private val hiddenFolders = mutableSetOf<Long>()
@@ -58,53 +60,24 @@ class HideServers : Plugin() {
         hiddenServers += settings.getObject("hiddenServers", mutableSetOf(), hiddenEntryType)
         hiddenFolders += settings.getObject("hiddenFolders", mutableSetOf(), hiddenEntryType)
 
-        patcher.after<WidgetGuildListAdapter>(
-            "onBindViewHolder",
-            GuildListViewHolder::class.java,
-            Int::class.javaPrimitiveType!!
-        ) { param ->
-            val holder = param.args[0] as? GuildListViewHolder ?: return@after
-            val position = param.args[1] as Int
-            val item = currentItems.getOrNull(position) ?: return@after
+        patchSetItems()
+        patchGuildBinding()
+        patchVisibilityToggle()
+        patchDragAndDrop()
+        patchContextMenus()
+    }
 
-            when (item) {
-                is GuildListItem.GuildItem ->
-                    bindVisibilityItem(holder, item.guild.id, hiddenServers, "hiddenServers")
+    override fun stop(context: Context) {
+        patcher.unpatchAll()
+        adapter = null
+        visibilityMode = VisibilityMode.HIDE
+        hiddenServers.clear()
+        hiddenFolders.clear()
+        currentItems = emptyList()
+        originalItems = emptyList()
+    }
 
-                is GuildListItem.FolderItem ->
-                    bindVisibilityItem(holder, item.folderId, hiddenFolders, "hiddenFolders", longClick = true)
-
-                GuildListItem.HelpItem.INSTANCE -> {
-                    val icon = holder.itemView.findViewById<ImageView>(
-                        Utils.getResId("guilds_item_profile_avatar", "id")
-                    ) ?: return@after
-
-                    icon.setImageResource(getVisibilityIcon(mode = visibilityMode))
-                    icon.imageTintList = ColorStateList.valueOf(
-                        ColorCompat.getThemedColor(icon.context, R.b.colorInteractiveNormal)
-                    )
-                }
-            }
-        }
-
-        patcher.before<WidgetGuildsListViewModel>(
-            "onItemClicked",
-            GuildListItem::class.java,
-            Context::class.java,
-            FragmentManager::class.java
-        ) { param ->
-            if (param.args[0] != GuildListItem.HelpItem.INSTANCE) return@before
-
-            visibilityMode = when (visibilityMode) {
-                VisibilityMode.HIDE -> VisibilityMode.SHOW
-                VisibilityMode.SHOW -> VisibilityMode.EDIT
-                VisibilityMode.EDIT -> VisibilityMode.HIDE
-            }
-
-            param.result = null
-            refreshList()
-        }
-
+    private fun patchSetItems() {
         patcher.before<WidgetGuildListAdapter>(
             "setItems",
             List::class.java,
@@ -147,6 +120,103 @@ class HideServers : Plugin() {
             currentItems = items
             param.args[0] = items
         }
+    }
+
+    private fun patchGuildBinding() {
+        patcher.after<WidgetGuildListAdapter>(
+            "onBindViewHolder",
+            GuildListViewHolder::class.java,
+            Int::class.javaPrimitiveType!!
+        ) { param ->
+            val holder = param.args[0] as? GuildListViewHolder ?: return@after
+            val position = param.args[1] as Int
+            val item = currentItems.getOrNull(position) ?: return@after
+
+            when (item) {
+                is GuildListItem.GuildItem ->
+                    bindVisibilityItem(holder, item.guild.id, hiddenServers, "hiddenServers")
+
+                is GuildListItem.FolderItem ->
+                    bindVisibilityItem(holder, item.folderId, hiddenFolders, "hiddenFolders", longClick = true)
+
+                GuildListItem.HelpItem.INSTANCE -> {
+                    val icon = holder.itemView.findViewById<ImageView>(
+                        Utils.getResId("guilds_item_profile_avatar", "id")
+                    ) ?: return@after
+
+                    icon.setImageResource(getVisibilityIcon(mode = visibilityMode))
+                    icon.imageTintList = ColorStateList.valueOf(
+                        ColorCompat.getThemedColor(icon.context, R.b.colorInteractiveNormal)
+                    )
+                }
+            }
+        }
+    }
+
+    private fun patchVisibilityToggle() {
+        patcher.before<WidgetGuildsListViewModel>(
+            "onItemClicked",
+            GuildListItem::class.java,
+            Context::class.java,
+            FragmentManager::class.java
+        ) { param ->
+            if (param.args[0] != GuildListItem.HelpItem.INSTANCE) return@before
+            param.result = null
+
+            visibilityMode = when (visibilityMode) {
+                VisibilityMode.HIDE -> VisibilityMode.SHOW
+                VisibilityMode.SHOW -> VisibilityMode.EDIT
+                VisibilityMode.EDIT -> VisibilityMode.HIDE
+            }
+
+            refreshList()
+        }
+    }
+
+    private fun patchDragAndDrop() {
+        patcher.before<WidgetGuildListAdapter>(
+            "onDragStarted",
+            RecyclerView.ViewHolder::class.java
+        ) {
+            if (visibilityMode == VisibilityMode.HIDE) {
+                visibilityMode = VisibilityMode.SHOW
+                refreshList()
+            }
+        }
+
+        patcher.after<WidgetGuildListAdapter>("onDrop") {
+            if (visibilityMode == VisibilityMode.SHOW) {
+                Utils.mainThread.postDelayed({
+                    visibilityMode = VisibilityMode.HIDE
+                    refreshList()
+                }, 2_000)
+            }
+        }
+    }
+
+    private fun patchContextMenus() {
+        patcher.after<WidgetGuildContextMenu>(
+            "configureUI",
+            GuildContextMenuViewModel.ViewState::class.java
+        ) { param ->
+            val state = param.args[0] as? GuildContextMenuViewModel.ViewState.Valid ?: return@after
+            val binding = getServerBindingMethod.invoke(param.thisObject) as? WidgetGuildContextMenuBinding
+                ?: return@after
+            val layout = binding.e.parent as? LinearLayout ?: return@after
+            val guild = state.guild
+
+            if (layout.findViewById<TextView>(hideServerViewId) != null) return@after
+
+            createHideOption(
+                layout = layout,
+                id = hideServerViewId,
+                layoutParams = binding.e.layoutParams,
+                targetId = guild.id,
+                hiddenSet = hiddenServers,
+                settingsKey = "hiddenServers",
+                label = "Server"
+            )
+        }
 
         patcher.after<WidgetFolderContextMenu>(
             "configureUI",
@@ -170,83 +240,73 @@ class HideServers : Plugin() {
                 label = "Folder"
             )
         }
+    }
 
-        patcher.after<WidgetGuildContextMenu>(
-            "configureUI",
-            GuildContextMenuViewModel.ViewState::class.java
-        ) { param ->
-            val state = param.args[0] as? GuildContextMenuViewModel.ViewState.Valid ?: return@after
-            val binding = getServerBindingMethod.invoke(param.thisObject) as? WidgetGuildContextMenuBinding
-                ?: return@after
-            val layout = binding.e.parent as? LinearLayout ?: return@after
-            val guild = state.guild
-
-            if (layout.findViewById<TextView>(hideServerViewId) != null) return@after
-
-            createHideOption(
-                layout = layout,
-                id = hideServerViewId,
-                layoutParams = binding.e.layoutParams,
-                targetId = guild.id,
-                hiddenSet = hiddenServers,
-                settingsKey = "hiddenServers",
-                label = "Server"
-            )
+    private fun bindVisibilityItem(
+        holder: GuildListViewHolder,
+        id: Long,
+        hiddenSet: MutableSet<Long>,
+        settingsKey: String,
+        longClick: Boolean = false
+    ) {
+        if (visibilityMode == VisibilityMode.EDIT) {
+            if (longClick) {
+                holder.itemView.setOnLongClickListener {
+                    toggleAndSave(id, hiddenSet, settingsKey)
+                    true
+                }
+            } else {
+                holder.itemView.setOnClickListener {
+                    toggleAndSave(id, hiddenSet, settingsKey)
+                }
+            }
         }
+
+        addHiddenBadge(
+            holder.itemView,
+            isHidden = id in hiddenSet,
+            show = visibilityMode == VisibilityMode.EDIT && id in hiddenSet
+        )
     }
 
-    override fun stop(context: Context) {
-        patcher.unpatchAll()
-        adapter = null
-        visibilityMode = VisibilityMode.HIDE
-        hiddenServers.clear()
-        hiddenFolders.clear()
-        currentItems = emptyList()
-        originalItems = emptyList()
-    }
-
-    private fun addVisibilityBadge(root: View, isHidden: Boolean, show: Boolean) {
+    private fun addHiddenBadge(root: View, isHidden: Boolean, show: Boolean) {
         val container = root.findViewById<FrameLayout>(
             Utils.getResId("guilds_item_avatar_wrap", "id")
         ) ?: root.findViewById(
             Utils.getResId("guilds_item_folder_container", "id")
         ) ?: return
 
-        container.findViewById<ImageView>(visibilityBadgeViewId)?.let { badge ->
-            badge.visibility = if (show) View.VISIBLE else View.GONE
-            badge.setImageResource(getVisibilityIcon(isHidden))
+        container.findViewById<FrameLayout>(visibilityBadgeViewId)?.let { overlay ->
+            overlay.fadeVisibility(show)
+            val icon = overlay.getChildAt(0) as? ImageView
+            icon?.setImageResource(getVisibilityIcon(isHidden))
+
             return
         }
 
-        container.addView(ImageView(container.context).apply {
+        container.addView(FrameLayout(container.context).apply {
             id = visibilityBadgeViewId
             visibility = if (show) View.VISIBLE else View.GONE
-            setImageResource(getVisibilityIcon(isHidden))
-            imageTintList = ColorStateList.valueOf(Color.WHITE)
-            setBackgroundResource(R.e.drawable_circle_black)
+            setBackgroundColor(0x99000000.toInt())
+
             layoutParams = FrameLayout.LayoutParams(
-                18.dp(container),
-                18.dp(container),
-                Gravity.BOTTOM or Gravity.END
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
             )
+
+            addView(ImageView(context).apply {
+                setImageResource(getVisibilityIcon(isHidden))
+                imageTintList = ColorStateList.valueOf(Color.WHITE)
+
+                layoutParams = FrameLayout.LayoutParams(
+                    20.dp(container),
+                    20.dp(container),
+                    Gravity.CENTER
+                )
+            })
+
+            bringToFront()
         })
-    }
-
-    private fun Drawable.tinted(context: Context): Drawable = mutate().apply {
-        setTint(ColorCompat.getThemedColor(context, R.b.colorInteractiveNormal))
-    }
-
-    private fun Int.dp(view: View): Int =
-        (this * view.resources.displayMetrics.density).toInt()
-
-    private fun toggleAndSave(id: Long, set: MutableSet<Long>, key: String) {
-        if (!set.add(id)) set.remove(id)
-        settings.setObject(key, set)
-        refreshList()
-    }
-
-    private fun refreshList() {
-        Utils.mainThread.post { adapter?.setItems(originalItems, false) }
     }
 
     @SuppressLint("SetTextI18n")
@@ -279,33 +339,6 @@ class HideServers : Plugin() {
         })
     }
 
-    private fun bindVisibilityItem(
-        holder: GuildListViewHolder,
-        id: Long,
-        hiddenSet: MutableSet<Long>,
-        settingsKey: String,
-        longClick: Boolean = false
-    ) {
-        if (visibilityMode == VisibilityMode.EDIT) {
-            if (longClick) {
-                holder.itemView.setOnLongClickListener {
-                    toggleAndSave(id, hiddenSet, settingsKey)
-                    true
-                }
-            } else {
-                holder.itemView.setOnClickListener {
-                    toggleAndSave(id, hiddenSet, settingsKey)
-                }
-            }
-        }
-
-        addVisibilityBadge(
-            holder.itemView,
-            isHidden = id in hiddenSet,
-            show = visibilityMode == VisibilityMode.EDIT
-        )
-    }
-
     private fun getVisibilityIcon(
         isHidden: Boolean? = null,
         mode: VisibilityMode? = null
@@ -325,15 +358,57 @@ class HideServers : Plugin() {
         }
     }
 
-    private fun GuildListItem.FolderItem.filterHiddenServersOrNull(
-        hiddenServers: Set<Long>
-    ): GuildListItem.FolderItem? {
-        val visibleGuilds = guilds.filterNot { it.id in hiddenServers }
-        if (visibleGuilds.isEmpty()) return null
-        return copy(
-            folderId, color, name, isOpen, visibleGuilds, isAnyGuildSelected,
-            isAnyGuildConnectedToVoice, isAnyGuildConnectedToStageChannel,
-            mentionCount, isUnread, isTargetedForFolderAddition
-        )
+    private fun toggleAndSave(id: Long, set: MutableSet<Long>, key: String) {
+        if (!set.add(id)) set.remove(id)
+        settings.setObject(key, set)
+        refreshList()
+    }
+
+    private fun refreshList() {
+        Utils.mainThread.post {
+            adapter?.setItems(originalItems, false)
+        }
     }
 }
+
+private fun View.fadeVisibility(show: Boolean) {
+    if ((visibility == View.VISIBLE) == show) {
+        animate().cancel()
+        alpha = if (show) 1f else 0f
+        return
+    }
+
+    animate().cancel()
+
+    if (show) {
+        alpha = 0f
+        visibility = View.VISIBLE
+    }
+
+    animate()
+        .alpha(if (show) 1f else 0f)
+        .setDuration(150)
+        .withEndAction {
+            visibility = if (show) View.VISIBLE else View.GONE
+        }
+        .start()
+}
+
+private fun GuildListItem.FolderItem.filterHiddenServersOrNull(
+    hiddenServers: Set<Long>
+): GuildListItem.FolderItem? {
+    val visibleGuilds = guilds.filterNot { it.id in hiddenServers }
+    if (visibleGuilds.isEmpty()) return null
+    return copy(
+        folderId, color, name, isOpen, visibleGuilds, isAnyGuildSelected,
+        isAnyGuildConnectedToVoice, isAnyGuildConnectedToStageChannel,
+        mentionCount, isUnread, isTargetedForFolderAddition
+    )
+}
+
+private fun Drawable.tinted(context: Context): Drawable = mutate().apply {
+    setTint(ColorCompat.getThemedColor(context, R.b.colorInteractiveNormal))
+}
+
+private fun Int.dp(view: View): Int =
+    (this * view.resources.displayMetrics.density).toInt()
