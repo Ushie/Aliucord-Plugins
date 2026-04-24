@@ -1,8 +1,11 @@
-version = "1.1.0"
+version = "1.1.1"
 description = "Hide servers from the context menu, with a toggle to show hidden ones"
 
 aliucord.changelog.set(
     """
+        # 1.1.1
+        * Don't automatically go back to hide mode when moving screens
+        
         # 1.1.0
         * Add hiding folders
         * Add edit mode

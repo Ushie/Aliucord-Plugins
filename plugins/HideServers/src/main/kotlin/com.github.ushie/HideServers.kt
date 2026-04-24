@@ -53,7 +53,6 @@ class HideServers : Plugin() {
     private var adapter: WidgetGuildListAdapter? = null
     private var currentItems: List<GuildListItem> = emptyList()
     private var originalItems: List<GuildListItem> = emptyList()
-    private var isPluginRefresh = false
 
     override fun start(context: Context) {
         hiddenServers += settings.getObject("hiddenServers", mutableSetOf(), hiddenEntryType)
@@ -118,10 +117,6 @@ class HideServers : Plugin() {
 
             if (GuildListItem.HelpItem.INSTANCE !in incomingItems) {
                 originalItems = incomingItems
-
-                if (!isPluginRefresh) {
-                    visibilityMode = VisibilityMode.HIDE
-                }
             }
 
             val shouldShowVisibilityToggle = settings.getBool("showVisibilityToggle", true)
@@ -251,11 +246,7 @@ class HideServers : Plugin() {
     }
 
     private fun refreshList() {
-        Utils.mainThread.post {
-            isPluginRefresh = true
-            adapter?.setItems(originalItems, false)
-            isPluginRefresh = false
-        }
+        Utils.mainThread.post { adapter?.setItems(originalItems, false) }
     }
 
     @SuppressLint("SetTextI18n")
