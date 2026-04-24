@@ -55,6 +55,7 @@ class HideServers : Plugin() {
     private var adapter: WidgetGuildListAdapter? = null
     private var currentItems: List<GuildListItem> = emptyList()
     private var originalItems: List<GuildListItem> = emptyList()
+    private var shouldHideAfterDrop = false
 
     override fun start(context: Context) {
         hiddenServers += settings.getObject("hiddenServers", mutableSetOf(), hiddenEntryType)
@@ -178,19 +179,24 @@ class HideServers : Plugin() {
             "onDragStarted",
             RecyclerView.ViewHolder::class.java
         ) {
-            if (visibilityMode == VisibilityMode.HIDE) {
-                visibilityMode = VisibilityMode.SHOW
-                refreshList()
-            }
+            if (visibilityMode != VisibilityMode.HIDE) return@before
+
+            visibilityMode = VisibilityMode.SHOW
+            shouldHideAfterDrop = true
+            refreshList()
         }
 
         patcher.after<WidgetGuildListAdapter>("onDrop") {
-            if (visibilityMode == VisibilityMode.SHOW) {
-                Utils.mainThread.postDelayed({
+            if (!shouldHideAfterDrop) return@after
+
+            Utils.mainThread.postDelayed({
+                if (visibilityMode == VisibilityMode.SHOW) {
                     visibilityMode = VisibilityMode.HIDE
                     refreshList()
-                }, 2_000)
-            }
+                }
+
+                shouldHideAfterDrop = false
+            }, 2_000)
         }
     }
 
