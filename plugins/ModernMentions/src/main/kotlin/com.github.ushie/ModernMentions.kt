@@ -2,7 +2,10 @@ package com.github.ushie
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.*
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.text.SpannableStringBuilder
@@ -11,7 +14,6 @@ import android.text.style.BackgroundColorSpan
 import android.text.style.ForegroundColorSpan
 import android.text.style.ReplacementSpan
 import androidx.core.graphics.ColorUtils
-import com.aliucord.Logger
 import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
@@ -29,7 +31,6 @@ class ModernMentions : Plugin() {
         settingsTab = SettingsTab(PluginSettings::class.java).withArgs(settings)
     }
 
-    private val log = Logger("AvatarInMentions")
     private val avatars = ConcurrentHashMap<Long, Bitmap>()
     private val fetching = ConcurrentHashMap<Long, Boolean>()
 
@@ -89,7 +90,7 @@ class ModernMentions : Plugin() {
                     fetchAvatar(context, user)
                 }
             } catch (t: Throwable) {
-                log.error("Failed to render mention", t)
+                logger.error("Failed to render mention", t)
             }
         }
     }
@@ -100,14 +101,14 @@ class ModernMentions : Plugin() {
         Utils.threadPool.execute {
             try {
                 val avatar = AvatarUtils(context, user).toBitmap() ?: run {
-                    log.warn("Failed to decode avatar bitmap for ${user.username}")
+                    logger.warn("Failed to decode avatar bitmap for ${user.username}")
                     return@execute
                 }
 
                 avatars[user.id] = AvatarUtils.makeCircle(avatar)
-                log.info("Cached avatar for ${user.username}")
+                logger.info("Cached avatar for ${user.username}")
             } catch (t: Throwable) {
-                log.error("Failed to fetch avatar for ${user.username}", t)
+                logger.error("Failed to fetch avatar for ${user.username}", t)
             } finally {
                 fetching.remove(user.id)
             }
