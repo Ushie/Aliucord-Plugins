@@ -97,7 +97,8 @@ class AvatarInHeader : Plugin() {
 
                 val params = icon.layoutParams as ConstraintLayout.LayoutParams
                 layoutParams = ConstraintLayout.LayoutParams(size, size).apply {
-                    startToStart = params.startToStart
+                    topToTop = params.topToTop
+                    bottomToBottom = params.bottomToBottom
                 }
 
                 (icon.parent as ViewGroup).addView(this)
