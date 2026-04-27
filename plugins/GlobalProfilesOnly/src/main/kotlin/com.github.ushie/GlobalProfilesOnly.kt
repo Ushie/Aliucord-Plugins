@@ -15,7 +15,7 @@ class GlobalProfilesOnly : Plugin() {
     }
 
     override fun start(context: Context) {
-        val disableNick = settings.getBool("disableNick", true)
+        val disableNick = settings.getBool("disableNick", false)
         val disableAvatar = settings.getBool("disableAvatar", true)
         val disableBanner = settings.getBool("disableBanner", true)
         patcher.before<GuildMember>(
