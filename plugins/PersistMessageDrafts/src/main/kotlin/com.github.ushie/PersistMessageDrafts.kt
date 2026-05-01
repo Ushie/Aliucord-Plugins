@@ -22,9 +22,8 @@ class PersistMessageDrafts : Plugin() {
             val channelId = it.args[0] as Long
             val text = it.args[1] as? CharSequence
 
-            // TODO: After https://github.com/Aliucord/Aliucord/issues/712 is closed, remove instead of set to empty string
             if (text.isNullOrEmpty()) {
-                settings.setString(channelId.toString(), "")
+                settings.remove(channelId.toString())
                 return@after
             }
 
@@ -52,7 +51,7 @@ class PersistMessageDrafts : Plugin() {
             Function1::class.java
         ) {
             val channelId = StoreStream.getChannelsSelected().id.toString()
-            settings.setString(channelId, "")
+            settings.remove(channelId)
         }
     }
 
