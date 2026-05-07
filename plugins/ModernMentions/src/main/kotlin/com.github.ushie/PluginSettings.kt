@@ -5,6 +5,8 @@ import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.View
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.LinearLayout
 import com.aliucord.Utils
 import com.aliucord.Utils.promptRestart
@@ -31,9 +33,10 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
 
         val ctx = requireContext()
 
-        val paddingInput = createInput(ctx,"padding", "Padding", 12)
-        val gapInput = createInput(ctx,"avatar_gap", "Avatar Gap", 8)
-        val radiusInput = createInput(ctx,"radius", "Corner Radius", 12)
+        val paddingInput = createIntInput(ctx, "padding", "Padding", 12)
+        val gapInput = createIntInput(ctx, "avatar_gap", "Avatar Gap", 8)
+        val radiusInput = createIntInput(ctx, "radius", "Corner Radius", 12)
+        val prefixInput = createInput(ctx, "prefix", "Mention prefix character", "@", allowEmpty = true)
 
 
         addSwitch(ctx, "show_avatar", "Show avatars", default = true)
@@ -42,6 +45,7 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
         addView(paddingInput)
         addView(gapInput)
         addView(radiusInput)
+        addView(prefixInput)
     }
 
     // https://github.com/Aliucord/aliucord/blob/4161d5eca10fdba7935efaa50338ea5522c08d7b/Aliucord/src/main/java/com/aliucord/settings/AliucordPage.kt#L83-L99
@@ -66,17 +70,40 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
         context: Context,
         key: String,
         label: String,
-        default: Int
-    ) = TextInput(context, "$label (default $default)", settings.getInt(key, default).toString(), SimpleTextWatcher {
-        it?.run {
-            val str = toString()
-            if (str != "") settings.setInt(key, str.toInt())
+        default: String,
+        inputType: Int = InputType.TYPE_CLASS_TEXT,
+        allowEmpty: Boolean = false,
+        onChange: (String) -> Unit = { settings.setString(key, it) },
+    ) = TextInput(
+        context,
+        "$label (default $default)",
+        settings.getString(key, default),
+        SimpleTextWatcher {
+            val value = it?.toString().orEmpty()
+            if (allowEmpty || value.isNotEmpty()) onChange(value)
+            promptRestart()
         }
-        promptRestart()
-    }).apply {
-        editText.inputType = InputType.TYPE_CLASS_NUMBER
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+    ).apply {
+        editText.inputType = inputType
+        layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
             DimenUtils.defaultPadding.let { setMargins(it, 0, it, it) }
         }
+    }
+
+    private fun createIntInput(
+        context: Context,
+        key: String,
+        label: String,
+        default: Int,
+        allowEmpty: Boolean = false
+    ) = createInput(
+        context,
+        key,
+        label,
+        default.toString(),
+        InputType.TYPE_CLASS_NUMBER,
+        allowEmpty = allowEmpty
+    ) {
+        settings.setInt(key, it.toInt())
     }
 }
