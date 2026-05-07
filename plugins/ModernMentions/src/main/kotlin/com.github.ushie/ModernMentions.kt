@@ -10,8 +10,6 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
-import android.text.style.BackgroundColorSpan
-import android.text.style.ForegroundColorSpan
 import android.text.style.ReplacementSpan
 import androidx.core.graphics.ColorUtils
 import com.aliucord.Utils
@@ -24,7 +22,7 @@ import com.discord.utilities.textprocessing.node.UserMentionNode
 import com.github.ushie.util.AvatarUtils
 import java.util.concurrent.ConcurrentHashMap
 
-@Suppress("unused", "UseKtx")
+@Suppress("UseKtx")
 @AliucordPlugin
 class ModernMentions : Plugin() {
     init {
@@ -37,6 +35,7 @@ class ModernMentions : Plugin() {
     override fun start(context: Context) {
         val users = StoreStream.getUsers()
         val guilds = StoreStream.getGuilds()
+        val namePrefix = settings.getString("prefix", "@")
         val padding = settings.getInt("padding", 12)
         val avatarGap = settings.getInt("avatar_gap", 8)
         val radius = settings.getInt("radius", 12)
@@ -44,51 +43,42 @@ class ModernMentions : Plugin() {
         val useRoleColor = settings.getBool("use_role_color", true)
 
         patcher.after<UserMentionNode<UserMentionNode.RenderContext>>(
-            "renderUserMention",
-            SpannableStringBuilder::class.java,
-            UserMentionNode.RenderContext::class.java
-        ) {
-            val builder = it.args[0] as? SpannableStringBuilder ?: return@after
-            val renderContext = it.args[1] as? UserMentionNode.RenderContext ?: return@after
-            val node = it.thisObject as? UserMentionNode<*> ?: return@after
+            "renderUserMention", SpannableStringBuilder::class.java, UserMentionNode.RenderContext::class.java
+        ) { param ->
+            val builder = param.args[0] as? SpannableStringBuilder ?: return@after
+            val renderContext = param.args[1] as? UserMentionNode.RenderContext ?: return@after
+            val node = this as? UserMentionNode<*> ?: return@after
 
             try {
                 val userId = node.userId
-                val mentionText = "@${renderContext.userNames?.get(userId) ?: "invalid-user"}"
+                val username = renderContext.userNames?.get(userId) ?: "invalid-user"
 
                 val end = builder.length
-                val start = end - mentionText.length
+                val start = end - "@$username".length
                 if (start < 0) return@after
 
                 val memberColor = guilds.getGuild(StoreStream.getGuildSelected().selectedGuildId)
                     ?.let { guilds.getMember(it.id, userId) }
                     ?.color
 
+                val avatarBitmap = avatars[userId]
                 val user = users.users[userId]
-                val avatar = if (showAvatar) avatars[userId] else null
+                if (showAvatar && user != null) fetchAvatar(context, user)
 
-                with(builder) {
-                    if (useRoleColor) {
-                        getSpans(start, end, ForegroundColorSpan::class.java).forEach(::removeSpan)
-                        getSpans(start, end, BackgroundColorSpan::class.java).forEach(::removeSpan)
-                    }
+                val mentionText = "$namePrefix$username"
 
-                    applyMentionSpan(
-                        context,
-                        start,
-                        end,
-                        memberColor,
-                        avatar,
-                        padding.toFloat(),
-                        avatarGap.toFloat(),
-                        radius.toFloat(),
-                        useRoleColor
-                    )
-                }
-
-                if (showAvatar && avatar == null && user != null) {
-                    fetchAvatar(context, user)
-                }
+                builder.applyMentionSpan(
+                    context,
+                    start,
+                    end,
+                    mentionText,
+                    memberColor,
+                    avatarBitmap,
+                    padding.toFloat(),
+                    avatarGap.toFloat(),
+                    radius.toFloat(),
+                    useRoleColor
+                )
             } catch (t: Throwable) {
                 logger.error("Failed to render mention", t)
             }
@@ -100,13 +90,9 @@ class ModernMentions : Plugin() {
 
         Utils.threadPool.execute {
             try {
-                val avatar = AvatarUtils(context, user).toBitmap() ?: run {
-                    logger.warn("Failed to decode avatar bitmap for ${user.username}")
-                    return@execute
-                }
+                val avatar = AvatarUtils(context, user).toBitmap() ?: return@execute
 
                 avatars[user.id] = AvatarUtils.makeCircle(avatar)
-                logger.info("Cached avatar for ${user.username}")
             } catch (t: Throwable) {
                 logger.error("Failed to fetch avatar for ${user.username}", t)
             } finally {
@@ -124,6 +110,7 @@ class ModernMentions : Plugin() {
 
 @SuppressLint("UseKtx")
 private class MentionSpan(
+    private val mentionText: String,
     private val avatar: Drawable? = null,
     private val avatarSize: Int = 0,
     private val padding: Float,
@@ -132,7 +119,10 @@ private class MentionSpan(
     private val backgroundColor: Int? = null,
     private val textColor: Int? = null
 ) : ReplacementSpan() {
-    private val avatarWidth get() = avatar?.let { avatarSize + avatarGap } ?: 0f
+
+    private val avatarWidth
+        get() =
+            if (avatar != null) avatarSize + avatarGap else 0f
 
     override fun getSize(
         paint: Paint,
@@ -141,8 +131,7 @@ private class MentionSpan(
         end: Int,
         fm: Paint.FontMetricsInt?
     ): Int {
-        val textWidth = paint.measureText(text, start, end)
-
+        val textWidth = paint.measureText(mentionText)
         return (padding + avatarWidth + textWidth + padding).toInt()
     }
 
@@ -158,11 +147,16 @@ private class MentionSpan(
         paint: Paint
     ) {
         val oldColor = paint.color
-        val width = padding + avatarWidth + paint.measureText(text, start, end) + padding
+        val width = padding + avatarWidth + paint.measureText(mentionText) + padding
 
         backgroundColor?.let {
             paint.color = it
-            canvas.drawRoundRect(x, top.toFloat(), x + width, bottom.toFloat(), radius, radius, paint)
+            canvas.drawRoundRect(
+                x, top.toFloat(),
+                x + width, bottom.toFloat(),
+                radius, radius,
+                paint
+            )
         }
 
         avatar?.let {
@@ -173,11 +167,14 @@ private class MentionSpan(
             canvas.restore()
         }
 
-        textColor?.let {
-            paint.color = it
-        }
+        textColor?.let { paint.color = it }
 
-        canvas.drawText(text, start, end, x + padding + avatarWidth, y.toFloat(), paint)
+        canvas.drawText(
+            mentionText,
+            x + padding + avatarWidth,
+            y.toFloat(),
+            paint
+        )
 
         paint.color = oldColor
     }
@@ -188,6 +185,7 @@ private fun SpannableStringBuilder.applyMentionSpan(
     context: Context,
     start: Int,
     end: Int,
+    mentionText: String,
     memberColor: Int?,
     avatar: Bitmap?,
     padding: Float,
@@ -197,50 +195,34 @@ private fun SpannableStringBuilder.applyMentionSpan(
 ) {
     val textColor = if (useRoleColor) {
         memberColor?.takeUnless { it == Color.BLACK } ?: Color.WHITE
-    } else {
-        null
-    }
+    } else null
 
     val backgroundColor = textColor?.let {
         ColorUtils.setAlphaComponent(
-            ColorUtils.blendARGB(it, Color.BLACK, 0.65f),
-            70
+            ColorUtils.blendARGB(it, Color.BLACK, 0.65f), 70
         )
     }
 
-    val span = if (avatar == null) {
-        MentionSpan(
-            padding = padding,
-            avatarGap = avatarGap,
-            radius = radius,
-            backgroundColor = backgroundColor,
-            textColor = textColor
-        )
-    } else {
-        val size = (context.resources.displayMetrics.density * 16).toInt()
+    val size = (context.resources.displayMetrics.density * 16).toInt()
 
-        val drawable = BitmapDrawable(
-            context.resources,
-            Bitmap.createScaledBitmap(avatar, size, size, true)
+    val drawable = avatar?.let {
+        BitmapDrawable(
+            context.resources, Bitmap.createScaledBitmap(it, size, size, true)
         ).apply {
             setBounds(0, 0, size, size)
         }
-
-        MentionSpan(
-            avatar = drawable,
-            avatarSize = size,
-            padding = padding,
-            avatarGap = avatarGap,
-            radius = radius,
-            backgroundColor = backgroundColor,
-            textColor = textColor
-        )
     }
 
-    setSpan(
-        span,
-        start,
-        end,
-        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+    val span = MentionSpan(
+        mentionText = mentionText,
+        avatar = drawable,
+        avatarSize = size,
+        padding = padding,
+        avatarGap = avatarGap,
+        radius = radius,
+        backgroundColor = backgroundColor,
+        textColor = textColor
     )
+
+    setSpan(span, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
 }
