@@ -1,47 +1,52 @@
 package com.github.ushie
 
 import android.content.Context
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.aliucord.Utils
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
-import com.aliucord.patcher.Hook
-import com.aliucord.utils.ReflectUtils
+import com.aliucord.patcher.after
+import com.aliucord.patcher.before
+import com.aliucord.utils.lazyField
+import com.aliucord.utils.lazyMethod
 import com.discord.databinding.WidgetGuildsListBinding
 import com.discord.widgets.guilds.list.GuildListItem
-import com.discord.widgets.guilds.list.WidgetGuildListAdapter
 import com.discord.widgets.guilds.list.WidgetGuildsList
 import com.discord.widgets.guilds.list.WidgetGuildsListViewModel
 
 @Suppress("unused")
 @AliucordPlugin
 class DMsToBottom : Plugin() {
+    init {
+        settingsTab = SettingsTab(PluginSettings::class.java).withArgs(settings)
+    }
+
+    private val getBinding by lazyMethod<WidgetGuildsList>("getBinding")
+    private val recyclerViewField by lazyField<WidgetGuildsListBinding>("b")
+
     override fun start(context: Context) {
-        patcher.patch(
-            WidgetGuildsList::class.java,
-            "configureUI",
-            arrayOf<Class<*>>(WidgetGuildsListViewModel.ViewState::class.java),
-            Hook { callFrame ->
-                val viewState = callFrame.args[0] as? WidgetGuildsListViewModel.ViewState.Loaded ?: return@Hook
-                val adapter = ReflectUtils.getField(callFrame.thisObject, "adapter") as? WidgetGuildListAdapter ?: return@Hook
-                val items = viewState.items
+        val stackToEnd = settings.getBool("stack_end", true)
 
-                val dmItems = items.extractAll<GuildListItem.PrivateChannelItem>() + items.extractAll<GuildListItem.FriendsItem>()
-                val topItems = items.extractAll<GuildListItem.HubItem>() + items.extractAll<GuildListItem.CreateItem>()
-                items.extractAll<GuildListItem.DividerItem>()
+        patcher.before<WidgetGuildsList>("configureUI", WidgetGuildsListViewModel.ViewState::class.java) { param ->
+            val items = (param.args[0] as? WidgetGuildsListViewModel.ViewState.Loaded)?.items ?: return@before
 
-                val insertAt = items.indexOfLast { it is GuildListItem.SpaceItem }.takeIf { it >= 0 } ?: (items.size - 1)
+            val dms = items.extractAll<GuildListItem.PrivateChannelItem>() + items.extractAll<GuildListItem.FriendsItem>()
+            val top = items.extractAll<GuildListItem.HubItem>() + items.extractAll<GuildListItem.CreateItem>() + items.extractAll<GuildListItem.HelpItem>()
+            items.extractAll<GuildListItem.DividerItem>()
 
-                val reordered = topItems + items.subList(0, insertAt) + GuildListItem.DividerItem.INSTANCE + dmItems + items.subList(insertAt, items.size)
-                items.clear()
-                items.addAll(reordered)
+            val insertAt = items.indexOfLast { it is GuildListItem.SpaceItem }.takeIf { it >= 0 } ?: items.size
 
-                adapter.setItems(items, false)
+            items.addAll(insertAt, listOf(GuildListItem.DividerItem.INSTANCE) + dms)
+            items.addAll(0, top)
+        }
 
-                val binding = ReflectUtils.getField(callFrame.thisObject, "binding") as? WidgetGuildsListBinding
-                binding?.root?.findViewById<RecyclerView>(Utils.getResId("guild_list", "id"))?.scrollToPosition(items.size - 1)
+        if (stackToEnd) {
+            patcher.after<WidgetGuildsList>("setupRecycler") {
+                val binding = getBinding.invoke(it.thisObject)
+                val recyclerView = recyclerViewField.get(binding) as? RecyclerView ?: return@after
+                (recyclerView.layoutManager as? LinearLayoutManager)?.stackFromEnd = true
             }
-        )
+        }
     }
 
     private inline fun <reified T : GuildListItem> MutableList<GuildListItem?>.extractAll(): List<T> =
