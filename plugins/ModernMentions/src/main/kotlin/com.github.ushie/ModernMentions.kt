@@ -18,8 +18,10 @@ import com.aliucord.entities.Plugin
 import com.aliucord.patcher.after
 import com.discord.models.user.User
 import com.discord.stores.StoreStream
+import com.discord.utilities.color.ColorCompat
 import com.discord.utilities.textprocessing.node.UserMentionNode
 import com.github.ushie.util.AvatarUtils
+import com.lytefast.flexinput.R
 import java.util.concurrent.ConcurrentHashMap
 
 @Suppress("UseKtx")
@@ -194,12 +196,23 @@ private fun SpannableStringBuilder.applyMentionSpan(
     useRoleColor: Boolean
 ) {
     val textColor = if (useRoleColor) {
-        memberColor?.takeUnless { it == Color.BLACK } ?: Color.WHITE
-    } else null
+        memberColor?.takeUnless { it == Color.BLACK }
+    } else {
+        ColorCompat.getThemedColor(
+            context,
+            R.b.theme_chat_mention_foreground
+        )
+    }
 
-    val backgroundColor = textColor?.let {
+    val backgroundColor = if (useRoleColor && textColor != null) {
         ColorUtils.setAlphaComponent(
-            ColorUtils.blendARGB(it, Color.BLACK, 0.65f), 70
+            ColorUtils.blendARGB(textColor, Color.BLACK, 0.65f),
+            70
+        )
+    } else {
+        ColorCompat.getThemedColor(
+            context,
+            R.b.theme_chat_mention_background
         )
     }
 
