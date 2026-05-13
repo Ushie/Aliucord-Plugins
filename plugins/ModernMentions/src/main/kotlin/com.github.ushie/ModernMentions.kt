@@ -196,7 +196,7 @@ private fun SpannableStringBuilder.applyMentionSpan(
     useRoleColor: Boolean
 ) {
     val textColor = if (useRoleColor) {
-        memberColor?.takeUnless { it == Color.BLACK }
+        memberColor?.takeUnless { it == Color.BLACK } ?: Color.WHITE
     } else {
         ColorCompat.getThemedColor(
             context,
@@ -204,7 +204,7 @@ private fun SpannableStringBuilder.applyMentionSpan(
         )
     }
 
-    val backgroundColor = if (useRoleColor && textColor != null) {
+    val backgroundColor = if (useRoleColor) {
         ColorUtils.setAlphaComponent(
             ColorUtils.blendARGB(textColor, Color.BLACK, 0.65f),
             70
