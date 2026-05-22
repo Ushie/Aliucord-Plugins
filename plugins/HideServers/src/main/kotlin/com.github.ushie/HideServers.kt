@@ -34,6 +34,7 @@ import com.discord.widgets.guilds.list.WidgetGuildListAdapter
 import com.discord.widgets.guilds.list.WidgetGuildsListViewModel
 import com.google.gson.reflect.TypeToken
 import com.lytefast.flexinput.R
+import java.lang.ref.WeakReference
 
 @AliucordPlugin
 class HideServers : Plugin() {
@@ -52,7 +53,7 @@ class HideServers : Plugin() {
     private val hiddenEntryType = object : TypeToken<MutableSet<Long>>() {}.type
     private val getServerBindingMethod by lazyMethod<WidgetGuildContextMenu>("getBinding")
     private val getFolderBindingMethod by lazyMethod<WidgetFolderContextMenu>("getBinding")
-    private var adapter: WidgetGuildListAdapter? = null
+    private var adapter: WeakReference<WidgetGuildListAdapter> = WeakReference(null)
     private var currentItems: List<GuildListItem> = emptyList()
     private var originalItems: List<GuildListItem> = emptyList()
     private var shouldHideAfterDrop = false
@@ -70,7 +71,6 @@ class HideServers : Plugin() {
 
     override fun stop(context: Context) {
         patcher.unpatchAll()
-        adapter = null
         visibilityMode = VisibilityMode.HIDE
         hiddenServers.clear()
         hiddenFolders.clear()
@@ -84,7 +84,7 @@ class HideServers : Plugin() {
             List::class.java,
             Boolean::class.java
         ) { param ->
-            adapter = param.thisObject as? WidgetGuildListAdapter
+            adapter = WeakReference(this)
 
             @Suppress("UNCHECKED_CAST")
             val incomingItems = param.args[0] as? List<GuildListItem> ?: return@before
@@ -371,9 +371,7 @@ class HideServers : Plugin() {
     }
 
     private fun refreshList() {
-        Utils.mainThread.post {
-            adapter?.setItems(originalItems, false)
-        }
+        adapter.get()?.setItems(originalItems, false)
     }
 }
 

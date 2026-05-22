@@ -1,30 +1,26 @@
 package com.github.ushie
 
 import android.content.Context
-import android.view.View
 import com.aliucord.annotations.AliucordPlugin
 import com.aliucord.entities.Plugin
-import com.aliucord.patcher.before
-import com.discord.widgets.channels.list.WidgetChannelsListAdapter
-import com.discord.widgets.channels.list.items.ChannelListItem
+import com.aliucord.patcher.instead
+import com.discord.api.guildscheduledevent.GuildScheduledEvent
+import com.discord.stores.StoreGuildScheduledEvents
+import java.util.Collections.emptyList
 
 @Suppress("unused")
 @AliucordPlugin
 class HideEvents : Plugin() {
     override fun start(context: Context) {
-        patcher.before<WidgetChannelsListAdapter.ItemGuildScheduledEvents>(
-            "onConfigure",
-            Int::class.javaPrimitiveType!!,
-            ChannelListItem::class.java
+        patcher.instead<StoreGuildScheduledEvents>("getGuildScheduledEvents",
+            Long::class.javaPrimitiveType!!,
+            Boolean::class.javaPrimitiveType!!
         ) {
-            itemView.apply {
-                visibility = View.GONE
-                layoutParams = itemView.layoutParams.apply {
-                    height = 0
-                }
-            }
+            return@instead emptyList<GuildScheduledEvent>()
+        }
 
-            it.result = null
+        patcher.instead<StoreGuildScheduledEvents>("getAllGuildScheduledEvents") {
+            return@instead emptyMap<Long, List<GuildScheduledEvent>>()
         }
     }
 

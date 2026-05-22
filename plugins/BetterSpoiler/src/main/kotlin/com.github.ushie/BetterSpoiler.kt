@@ -101,7 +101,7 @@ class BetterSpoiler : Plugin() {
             val entry = embedMap[this.embedEntry.embed] ?: return@after
             val message = entry.message
 
-            it.result = when {
+            val shouldSpoiler = when {
                 message.author.id in spoilerInUsers -> true
                 entry.guildId in spoilerInGuilds -> true
                 message.channelId in spoilerInChannels -> true
@@ -110,6 +110,8 @@ class BetterSpoiler : Plugin() {
                 }
                 else -> return@after
             }
+
+            it.result = shouldSpoiler
         }
 
         patcher.after<WidgetChannelsListItemChannelActions>(

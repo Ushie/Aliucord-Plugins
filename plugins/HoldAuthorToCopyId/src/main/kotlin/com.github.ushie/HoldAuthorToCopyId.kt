@@ -45,6 +45,5 @@ class HoldAuthorToCopyId : Plugin() {
 
     override fun stop(context: Context) {
         patcher.unpatchAll()
-        commands.unregisterAll()
     }
 }

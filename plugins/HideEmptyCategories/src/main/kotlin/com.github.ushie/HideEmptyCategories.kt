@@ -41,7 +41,7 @@ class HideEmptyCategories : Plugin() {
             GuildJoinRequest::class.java, // guildJoinRequest
             GuildMember::class.java // member
         ) { param ->
-            val items = param.result as List<ChannelListItem>
+            val items = param.result as? List<ChannelListItem> ?: return@after
             param.result = filterEmptyCategories(items)
         }
     }
