@@ -2,6 +2,7 @@ package com.github.ushie
 
 import android.view.View
 import com.aliucord.Utils
+import com.aliucord.Utils.promptRestart
 import com.aliucord.api.SettingsAPI
 import com.aliucord.fragments.SettingsPage
 import com.discord.views.CheckedSetting
@@ -21,7 +22,10 @@ class PluginSettings(private val settings: SettingsAPI) : SettingsPage() {
                 "Automatically spoilers attachments in NSFW channels"
             ).apply {
                 isChecked = settings.getBool("spoiler_nsfw_channels", false)
-                setOnCheckedListener { settings.setBool("spoiler_nsfw_channels", it) }
+                setOnCheckedListener {
+                    settings.setBool("spoiler_nsfw_channels", it)
+                    promptRestart()
+                }
             }
         )
     }
