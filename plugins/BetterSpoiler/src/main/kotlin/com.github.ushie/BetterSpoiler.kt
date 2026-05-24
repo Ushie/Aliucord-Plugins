@@ -17,6 +17,7 @@ import com.aliucord.wrappers.ChannelWrapper.Companion.nsfw
 import com.discord.api.message.attachment.MessageAttachment
 import com.discord.api.message.embed.MessageEmbed
 import com.discord.databinding.WidgetGuildContextMenuBinding
+import com.discord.models.message.Message
 import com.discord.stores.StoreStream
 import com.discord.utilities.color.ColorCompat
 import com.discord.widgets.channels.list.WidgetChannelsListItemChannelActions
@@ -69,19 +70,11 @@ class BetterSpoiler : Plugin() {
         }
 
         patcher.after<MessageAttachment>("h") {
+            if (it.result == true) return@after
             val entry = attachmentMap[this] ?: return@after
             val message = entry.message
 
-            it.result = when {
-                message.author.id in spoilerInUsers -> true
-                entry.guildId in spoilerInGuilds -> true
-                message.channelId in spoilerInChannels -> true
-                spoilerNsfw -> nsfwChannelsCache.getOrPut(message.channelId) {
-                    StoreStream.getChannels().getChannel(message.channelId)?.nsfw ?: false
-                }
-
-                else -> return@after
-            }
+            if (shouldEnableSpoiler(message, entry.guildId)) it.result = true else return@after
         }
 
         patcher.before<WidgetChatListAdapterItemEmbed.Model>(
@@ -98,20 +91,11 @@ class BetterSpoiler : Plugin() {
         }
 
         patcher.after<WidgetChatListAdapterItemEmbed.Model>("isSpoilerEmbed") {
+            if (it.result == true) return@after
             val entry = embedMap[this.embedEntry.embed] ?: return@after
             val message = entry.message
 
-            val shouldSpoiler = when {
-                message.author.id in spoilerInUsers -> true
-                entry.guildId in spoilerInGuilds -> true
-                message.channelId in spoilerInChannels -> true
-                spoilerNsfw -> nsfwChannelsCache.getOrPut(message.channelId) {
-                    StoreStream.getChannels().getChannel(message.channelId)?.nsfw ?: false
-                }
-                else -> return@after
-            }
-
-            it.result = shouldSpoiler
+            if (shouldEnableSpoiler(message, entry.guildId)) it.result = true else return@after
         }
 
         patcher.after<WidgetChannelsListItemChannelActions>(
@@ -156,6 +140,19 @@ class BetterSpoiler : Plugin() {
 
             createContextOption(view, spoilerInUsers, userId, "spoiler_in_users") { spoilerInUsers = it }
         }
+    }
+
+    private fun shouldEnableSpoiler(message: Message, guildId: Long): Boolean {
+        if (message.author.id in spoilerInUsers) return true
+        if (guildId in spoilerInGuilds) return true
+        if (message.channelId in spoilerInChannels) return true
+        if (!spoilerNsfw) return false
+
+        val isInNsfwChannel = nsfwChannelsCache.getOrPut(message.channelId) {
+            StoreStream.getChannels().getChannel(message.channelId).nsfw
+        }
+
+        return isInNsfwChannel
     }
 
     private fun createContextOption(
