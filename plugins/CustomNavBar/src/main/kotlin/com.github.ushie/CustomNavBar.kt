@@ -69,15 +69,15 @@ class CustomNavBar : Plugin() {
 
         if (navItems == DEFAULTS) return
 
-        patchNavBar(navItems)
-        patchGuildList()
+        val hasMessagesEnabled = navItems.any { it.name == "Messages" && it.enabled }
+
+        patchNavBar(navItems, hasMessagesEnabled)
+        if (hasMessagesEnabled) patchGuildList()
     }
 
     override fun stop(context: Context) = patcher.unpatchAll()
 
-    private fun patchNavBar(navItems: List<NavItem>) {
-        val hasMessagesEnabled = navItems.any { it.name == "Messages" && it.enabled }
-
+    private fun patchNavBar(navItems: List<NavItem>, hasMessagesEnabled: Boolean) {
         if (hasMessagesEnabled) {
             patcher.after<`TabsHostBottomNavigationView$updateView$4`>("onClick", View::class.java) {
                 if (settings.lastChannel != 0L) {
