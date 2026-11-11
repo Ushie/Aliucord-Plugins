@@ -22,8 +22,6 @@ class QuickSpoilAttachment : Plugin() {
             val holder = it.args[0] as AttachmentPreviewAdapterViewHolder<*>
 
             val item = this.a.get(it.args[1] as Int)
-            if (item !is Media)
-                return@after
 
             with(holder.p) {
                 b.setOnLongClickListener {
